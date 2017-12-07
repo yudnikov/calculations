@@ -148,4 +148,7 @@ package object calculations {
     override def representation: String = trace()
   }
 
+  case class PercentCalc(value: BigDecimal, operation: Operation, children: List[Calculation[_]])
+    extends Calculation[BigDecimal]
+
 }
