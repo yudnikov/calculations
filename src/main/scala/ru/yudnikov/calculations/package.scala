@@ -84,7 +84,7 @@ package object calculations {
     lazy val isFather: Boolean = isParent && children.forall(!_.isParent)
     lazy val isParent: Boolean = children.nonEmpty
     lazy val height: Int = if (!isParent) 0 else children.map(_.height).max + 1
-    lazy val representation: String = value.toString
+    def representation: String = value.toString
 
     def trackFull(isRoot: Boolean = true): String = if (isRoot) {
       s"$value = (${children.map(_.trackFull(false)).mkString(operation.spaced)})"
@@ -110,10 +110,12 @@ package object calculations {
       } else
         Nil
     }
-
+    lazy val isTaxAmount: Boolean = {
+      children.exists(_.isInstanceOf[TaxCalc])
+    }
   }
 
-  case class MoneyCalc(value: ScalaMoney, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
+  class MoneyCalc(val value: ScalaMoney, val operation: Operation = Operation.PRIMARY, val children: List[Calculation[_]] = Nil)
     (implicit context: CalculationsContext)
     extends Calculation[ScalaMoney] {
     def to(currencyUnit: CurrencyUnit): MoneyCalc = {
@@ -156,6 +158,13 @@ package object calculations {
     def *+(taxCode: TaxCode): MoneyCalc = {
       this + (this * TaxCalc(taxCode))
     }
+  }
+  object MoneyCalc {
+    def apply(
+      value: ScalaMoney,
+      operation: Operation = Operation.PRIMARY,
+      children: List[Calculation[_]] = Nil
+    )(implicit context: CalculationsContext): MoneyCalc = new MoneyCalc(value, operation, children)
   }
 
   implicit class BooleanExt(value: Boolean) {
@@ -210,7 +219,7 @@ package object calculations {
 
   class PercentCalc(percent: BigDecimal, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
     extends FactorCalc(percent / 100, operation, children) {
-    override lazy val representation: String = s"$value%"
+    override def representation: String = s"$value%"
   }
 
   object PercentCalc {
@@ -228,7 +237,10 @@ package object calculations {
     def *(that: B): A
   }
 
-  case class TaxCalc(taxCode: TaxCode)(implicit context: CalculationsContext) extends PercentCalc(context.taxRateProvider.getRate(taxCode))
+  case class TaxCalc(taxCode: TaxCode)(implicit context: CalculationsContext)
+    extends PercentCalc(context.taxRateProvider.getRate(taxCode)) {
+    override def representation: String = s"$taxCode " + super.representation
+  }
 
   abstract class TaxCode(val code: String)
   object TaxCode {
