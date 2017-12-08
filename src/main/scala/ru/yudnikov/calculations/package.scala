@@ -20,9 +20,9 @@ package object calculations {
     def USD: Money = Money.of(CurrencyUnit.USD, value)
     def EUR: Money = Money.of(CurrencyUnit.EUR, value)
     def ~ : FactorCalc = FactorCalc(value)
-    def ~*(that: Double): FactorCalc = FactorCalc(this.value) * FactorCalc(that)
+    def ~*(that: Double): FactorCalc = this.~ * that.~
     def ~*(that: ScalaMoney)(implicit context: CalculationsContext): MoneyCalc = this.~ * that.~
-    def ~+(that: Double): FactorCalc = FactorCalc(this.value) + FactorCalc(that)
+    def ~+(that: Double): FactorCalc = this.~ + that.~
     def ~% : PercentCalc = PercentCalc(BigDecimal(value))
   }
 
@@ -46,18 +46,13 @@ package object calculations {
     def -(that: ScalaMoney): ScalaMoney = {
       this.money minus (that.money to this.money.getCurrencyUnit).money
     }
-    def ~ : MoneyCalc = {
-      MoneyCalc(this)
-    }
+    def ~ : MoneyCalc = MoneyCalc(this)
     def ~*(that: FactorCalc): MoneyCalc = this.~ * that
     def ~*(that: Double): MoneyCalc = this.~ * that.~
-    //def ~*(that: PercentCalc): MoneyCalc = this.~ * that
     def ~+(that: ScalaMoney): MoneyCalc = this.~ + that.~
     lazy val currencyUnit: CurrencyUnit = money.getCurrencyUnit
     override def toString: String = money.toString
-
     override def hashCode(): Int = money.hashCode()
-
     override def equals(obj: scala.Any): Boolean = obj match {
       case that: ScalaMoney =>
         this.money == that.money
@@ -127,7 +122,7 @@ package object calculations {
     override def hashCode(): Int = 41 * value.hashCode() * operation.hashCode() * children.hashCode()
     override def equals(obj: scala.Any): Boolean = obj match {
       case that: Calculation[_] if this.getClass == that.getClass =>
-        this.value == that.value && this.operation == that.operation && this.children == that.children
+        this.value == that.value && this.operation == that.operation && this.children.toSet == that.children.toSet
       case _ =>
         false
     }
@@ -178,11 +173,10 @@ package object calculations {
     }
   }
   object MoneyCalc {
-    def apply(
-      value: ScalaMoney,
-      operation: Operation = Operation.PRIMARY,
-      children: List[Calculation[_]] = Nil
-    )(implicit context: CalculationsContext): MoneyCalc = new MoneyCalc(value, operation, children)
+    def apply(value: ScalaMoney, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
+      (implicit context: CalculationsContext): MoneyCalc = {
+      new MoneyCalc(value, operation, children)
+    }
     def unapply(moneyCalc: MoneyCalc): Option[(ScalaMoney, Operation, List[Calculation[_]])] = {
       Some(moneyCalc.value, moneyCalc.operation, moneyCalc.children)
     }

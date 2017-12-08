@@ -22,6 +22,7 @@ class CalculationsSuite extends FlatSpec with Matchers {
       val factorCalc = FactorCalc(3)
       MoneyCalc(ScalaMoney(300.RUR), Operation.*, factorCalc :: moneyCalc :: Nil)
     }
+    100.RUR ~* 3 shouldEqual 3 ~* 100.RUR
   }
 
   "Money + Money" should "give MoneyCalc and be associative" in {
