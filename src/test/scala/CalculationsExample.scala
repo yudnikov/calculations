@@ -28,4 +28,19 @@ object CalculationsExample extends App {
   //val x = ((100.RUR.~ * 10.~ to CurrencyUnit.USD) ~+ 30.EUR) * factor
   //x.tracksPrint()
 
+  //println(100.RUR.~ == 100.RUR.~)
+
+  /*
+  val a = 100.RUR ~* 3
+  val moneyCalc = MoneyCalc(100.RUR)
+  val factorCalc = FactorCalc(3)
+  val b = MoneyCalc(ScalaMoney(300.RUR), Operation.*, moneyCalc :: factorCalc :: Nil)
+  println(a == b)
+  */
+
+  val r = 100.RUR ~+ 50.RUR
+  val a = MoneyCalc(100.RUR)
+  val b = MoneyCalc(50.RUR)
+  println(r == MoneyCalc(ScalaMoney(150.RUR), Operation.+, a :: b :: Nil))
+
 }

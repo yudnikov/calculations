@@ -21,6 +21,7 @@ package object calculations {
     def EUR: Money = Money.of(CurrencyUnit.EUR, value)
     def ~ : FactorCalc = FactorCalc(value)
     def ~*(that: Double): FactorCalc = FactorCalc(this.value) * FactorCalc(that)
+    def ~*(that: ScalaMoney)(implicit context: CalculationsContext): MoneyCalc = this.~ * that.~
     def ~+(that: Double): FactorCalc = FactorCalc(this.value) + FactorCalc(that)
     def ~% : PercentCalc = PercentCalc(BigDecimal(value))
   }
@@ -51,8 +52,18 @@ package object calculations {
     def ~*(that: FactorCalc): MoneyCalc = this.~ * that
     def ~*(that: Double): MoneyCalc = this.~ * that.~
     //def ~*(that: PercentCalc): MoneyCalc = this.~ * that
+    def ~+(that: ScalaMoney): MoneyCalc = this.~ + that.~
     lazy val currencyUnit: CurrencyUnit = money.getCurrencyUnit
     override def toString: String = money.toString
+
+    override def hashCode(): Int = money.hashCode()
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: ScalaMoney =>
+        this.money == that.money
+      case _ =>
+        false
+    }
   }
 
   object ScalaMoney {
@@ -113,6 +124,13 @@ package object calculations {
     lazy val isTaxAmount: Boolean = {
       children.exists(_.isInstanceOf[TaxCalc])
     }
+    override def hashCode(): Int = 41 * value.hashCode() * operation.hashCode() * children.hashCode()
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: Calculation[_] if this.getClass == that.getClass =>
+        this.value == that.value && this.operation == that.operation && this.children == that.children
+      case _ =>
+        false
+    }
   }
 
   class MoneyCalc(val value: ScalaMoney, val operation: Operation = Operation.PRIMARY, val children: List[Calculation[_]] = Nil)
@@ -165,6 +183,9 @@ package object calculations {
       operation: Operation = Operation.PRIMARY,
       children: List[Calculation[_]] = Nil
     )(implicit context: CalculationsContext): MoneyCalc = new MoneyCalc(value, operation, children)
+    def unapply(moneyCalc: MoneyCalc): Option[(ScalaMoney, Operation, List[Calculation[_]])] = {
+      Some(moneyCalc.value, moneyCalc.operation, moneyCalc.children)
+    }
   }
 
   implicit class BooleanExt(value: Boolean) {
@@ -187,10 +208,17 @@ package object calculations {
     override def *(that: FactorCalc): FactorCalc = {
       new FactorCalc(this.value * that.value, Operation.*, this :: that :: Nil)
     }
+    def *(that: MoneyCalc)(implicit context: CalculationsContext) = {
+      val result = that.value * value
+      MoneyCalc(result, Operation.*, this :: that :: Nil)
+    }
     def ~*(that: Double): FactorCalc = {
       new FactorCalc(this.value * that, Operation.*, this :: that.~ :: Nil)
     }
     //def ~*(that: Double): FactorCalc = ???
+    override def equals(obj: Any): Boolean = {
+      super.equals(obj)
+    }
   }
 
   object FactorCalc {
