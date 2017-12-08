@@ -1,5 +1,7 @@
 package ru.yudnikov
 
+import java.io.{PrintStream, PrintWriter}
+
 import language.{implicitConversions, postfixOps}
 import org.joda.money.{CurrencyUnit, Money}
 import java.math.RoundingMode
@@ -17,6 +19,10 @@ package object calculations {
     def RUR: Money = Money.of(CurrencyUnit.of("RUR"), value)
     def USD: Money = Money.of(CurrencyUnit.USD, value)
     def EUR: Money = Money.of(CurrencyUnit.EUR, value)
+    def ~ : FactorCalc = FactorCalc(value)
+    def ~*(that: Double): FactorCalc = FactorCalc(this.value) * FactorCalc(that)
+    def ~+(that: Double): FactorCalc = FactorCalc(this.value) + FactorCalc(that)
+    def ~% : PercentCalc = PercentCalc(BigDecimal(value))
   }
 
   implicit class ScalaMoney(val money: Money)(implicit currencyRateProvider: CurrencyRateProvider, roundingMode: RoundingMode) {
@@ -30,6 +36,9 @@ package object calculations {
     def *(bigDecimal: BigDecimal): ScalaMoney = {
       money.multipliedBy(bigDecimal.bigDecimal, roundingMode)
     }
+    def /(bigDecimal: BigDecimal): ScalaMoney = {
+      money.dividedBy(bigDecimal.bigDecimal, roundingMode)
+    }
     def +(that: ScalaMoney): ScalaMoney = {
       this.money plus (that.money to this.money.getCurrencyUnit).money
     }
@@ -39,6 +48,9 @@ package object calculations {
     def ~ : MoneyCalc = {
       MoneyCalc(this)
     }
+    def ~*(that: FactorCalc): MoneyCalc = this.~ * that
+    def ~*(that: Double): MoneyCalc = this.~ * that.~
+    //def ~*(that: PercentCalc): MoneyCalc = this.~ * that
     lazy val currencyUnit: CurrencyUnit = money.getCurrencyUnit
     override def toString: String = money.toString
   }
@@ -55,45 +67,50 @@ package object calculations {
   trait Operation {
     def spaced: String = " " + toString + " "
   }
+
   object Operation {
     case object PRIMARY extends Operation
     case object Conversion extends Operation
     case object + extends Operation
     case object - extends Operation
     case object * extends Operation
+    case object / extends Operation
   }
 
   trait Calculation[T] {
     val value: T
     val operation: Operation
     val children: List[Calculation[_]]
-    def trace(isRoot: Boolean = true): String = if (isRoot) {
-      s"$value = (${children.map(_.trace(false)).mkString(operation.spaced)})"
+    lazy val isFather: Boolean = isParent && children.forall(!_.isParent)
+    lazy val isParent: Boolean = children.nonEmpty
+    lazy val height: Int = if (!isParent) 0 else children.map(_.height).max + 1
+    lazy val representation: String = value.toString
+
+    def trackFull(isRoot: Boolean = true): String = if (isRoot) {
+      s"$value = (${children.map(_.trackFull(false)).mkString(operation.spaced)})"
     } else if (children.nonEmpty) {
-      "(" + children.map(_.trace(false)).mkString(operation.spaced) + ")"
+      "(" + children.map(_.trackFull(false)).mkString(operation.spaced) + ")"
     } else {
       value.toString
     }
 
-    lazy val height: Int = if (!isParent) 0 else {
-      children.map(_.height).max + 1
+    def tracksPrint(printWriter: PrintStream = System.out): Unit = {
+      tracks foreach printWriter.println
     }
 
-    def tracePrint(isRoot: Boolean = true): List[(String, Int)] = {
+    def tracks: List[String] = trackWithHeights().sortBy(_._2).map(t => t._2 + ") " + t._1)
+
+    private def trackWithHeight: (String, Int) = s"$value = ${children.map(_.representation).mkString(operation.spaced)}" ->  height
+
+    private def trackWithHeights(isRoot: Boolean = true): List[(String, Int)] = {
       if (isFather) {
-        List(traceShort)
+        List(trackWithHeight)
       } else if (isParent) {
-        children.flatMap(_.tracePrint()) union List(traceShort)
+        children.flatMap(_.trackWithHeights()) union List(trackWithHeight)
       } else
         Nil
     }
-    def isParent: Boolean = children.nonEmpty
-    def isFather: Boolean = {
-      val res = isParent && children.forall(!_.isParent)
-      res
-    }
-    def traceShort: (String, Int) = s"$value = ${children.map(_.representation).mkString(operation.spaced)}" -> height
-    def representation: String = value.toString
+
   }
 
   case class MoneyCalc(value: ScalaMoney, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
@@ -111,16 +128,27 @@ package object calculations {
       val result = value + converted.value
       MoneyCalc(result, Operation.+, this :: converted :: Nil)
     }
-    def +(that: ScalaMoney): MoneyCalc = {
-      this + that.~
-    }
     def -(that: MoneyCalc): MoneyCalc = {
       val converted = that to this.value.currencyUnit
       val result = value - converted.value
       MoneyCalc(result, Operation.-, this :: converted :: Nil)
     }
-    def -(that: ScalaMoney): MoneyCalc = {
+    def ~*(that: Double): MoneyCalc = {
+      this * that.~
+    }
+    def ~+(that: ScalaMoney): MoneyCalc = {
+      this + that.~
+    }
+    def ~-(that: ScalaMoney): MoneyCalc = {
       this - that.~
+    }
+    def *(factorCalc: FactorCalc): MoneyCalc = {
+      val result = this.value * factorCalc.value
+      MoneyCalc(result, Operation.*, this :: factorCalc :: Nil)
+    }
+    def *(percentCalc: PercentCalc): MoneyCalc = {
+      val result = this.value * percentCalc.value / 100
+      MoneyCalc(result, Operation.*, this :: percentCalc :: Nil)
     }
   }
 
@@ -128,8 +156,26 @@ package object calculations {
     def toOption[T](body: => T): Option[T] = if (value) Some(body) else None
   }
 
-  case class FactorCalc(value: BigDecimal, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
-    extends Calculation[BigDecimal] {
+  case class FactorCalc(
+    value: BigDecimal,
+    operation: Operation = Operation.PRIMARY,
+    children: List[Calculation[_]] = Nil
+  ) extends Calculation[BigDecimal]
+      with Addendum[FactorCalc, FactorCalc]
+      with Multiplier[FactorCalc, FactorCalc] {
+    override def +(that: FactorCalc): FactorCalc = {
+      FactorCalc(this.value + that.value, Operation.+, this :: that :: Nil)
+    }
+    override def -(that: FactorCalc): FactorCalc = {
+      FactorCalc(this.value - that.value, Operation.-, this :: that :: Nil)
+    }
+    override def *(that: FactorCalc): FactorCalc = {
+      FactorCalc(this.value * that.value, Operation.*, this :: that :: Nil)
+    }
+    def ~*(that: Double): FactorCalc = {
+      FactorCalc(this.value * that, Operation.*, this :: that.~ :: Nil)
+    }
+    //def ~*(that: Double): FactorCalc = ???
   }
 
   case class ConversionFactorCalc(
@@ -140,15 +186,26 @@ package object calculations {
   )(
     implicit formatter: DateTimeFormatter = DateTimeFormat.forPattern("yyyy-MM-dd")
   ) extends Calculation[BigDecimal] {
-    override val operation: Operation = Operation.Conversion
-    override val children: List[Calculation[_]] = Nil
-    override def trace(isRoot: Boolean): String = {
+    override lazy val operation: Operation = Operation.Conversion
+    override lazy val children: List[Calculation[_]] = Nil
+    override lazy val representation: String = trackFull()
+    override def trackFull(isRoot: Boolean): String = {
       s"$value | $numerator->$denominator @ ${formatter.print(provider.dateTime)} by ${provider.getClass.getSimpleName}"
     }
-    override def representation: String = trace()
   }
 
-  case class PercentCalc(value: BigDecimal, operation: Operation, children: List[Calculation[_]])
-    extends Calculation[BigDecimal]
+  case class PercentCalc(value: BigDecimal, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
+    extends Calculation[BigDecimal] {
+    override lazy val representation: String = s"$value%"
+  }
+
+  trait Addendum[A, B] {
+    def +(that: B): A
+    def -(that: B): A
+  }
+
+  trait Multiplier[A, B] {
+    def *(that: B): A
+  }
 
 }

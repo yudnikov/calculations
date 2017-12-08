@@ -13,13 +13,19 @@ object CalculationsExample extends App {
   implicit val currencyRateProvider: CurrencyRateProvider = ExampleRateProvider()
   implicit val roundingMode: RoundingMode = RoundingMode.HALF_UP
 
-  val y = (((20.RUR.~ + 20.RUR) to CurrencyUnit.USD) + 50.EUR) - 59.72.USD to CurrencyUnit.of("RUR")
-  println(y.trace())
-  y.tracePrint().sortBy(_._2).foreach(t => println(s"${t._2}) ${t._1}"))
+  /*val y = (((20.RUR.~ + 20.RUR) to CurrencyUnit.USD) + 50.EUR) - 59.72.USD to CurrencyUnit.of("RUR")
+  println(y.traceMonolith())
+  y.trace foreach println
 
   println()
 
   val z = (100.RUR.~ to CurrencyUnit.USD) + 20.USD
-  z.tracePrint().sortBy(_._2).foreach(t => println(s"${t._2}) ${t._1}"))
+  z.trace foreach println*/
+
+  val factor = (300.RUR ~* (2 ~+ 4) + 20.USD ~* 3 to CurrencyUnit.USD) * 2.~%
+  factor.tracksPrint()
+
+  //val x = ((100.RUR.~ * 10.~ to CurrencyUnit.USD) ~+ 30.EUR) * factor
+  //x.tracksPrint()
 
 }
