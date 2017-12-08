@@ -2,9 +2,9 @@ import org.joda.money.CurrencyUnit
 import org.joda.time.DateTime
 import ru.yudnikov.calculations.CurrencyRateProvider
 
-case class ExampleRateProvider() extends CurrencyRateProvider {
+case class ExampleCurrencyRateProvider() extends CurrencyRateProvider {
   import CurrencyUnit._
-  override val dateTime: DateTime = new DateTime()
+  override val dateTime: DateTime = new DateTime(2017, 12, 4, 12, 0)
   private val RUR = CurrencyUnit.of("RUR")
   override def getRate(numerator: CurrencyUnit, denominator: CurrencyUnit): BigDecimal = {
     numerator -> denominator match {

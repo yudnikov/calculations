@@ -10,8 +10,11 @@ import language.{implicitConversions, postfixOps}
 
 object CalculationsExample extends App {
 
-  implicit val currencyRateProvider: CurrencyRateProvider = ExampleRateProvider()
-  implicit val roundingMode: RoundingMode = RoundingMode.HALF_UP
+  implicit val calculationsContext: CalculationsContext = CalculationsContext(
+    ExampleCurrencyRateProvider(),
+    ExampleTaxRateProvider(),
+    RoundingMode.HALF_UP
+  )
 
   /*val y = (((20.RUR.~ + 20.RUR) to CurrencyUnit.USD) + 50.EUR) - 59.72.USD to CurrencyUnit.of("RUR")
   println(y.traceMonolith())
@@ -22,7 +25,7 @@ object CalculationsExample extends App {
   val z = (100.RUR.~ to CurrencyUnit.USD) + 20.USD
   z.trace foreach println*/
 
-  val factor = (300.RUR ~* (2 ~+ 4) + 20.USD ~* 3 to CurrencyUnit.USD) * 2.~%
+  val factor = ((300.RUR ~* (2 ~+ 4) + 20.USD ~* 3 to CurrencyUnit.of("RUR"))) *+ TaxCode.VAT
   factor.tracksPrint()
 
   //val x = ((100.RUR.~ * 10.~ to CurrencyUnit.USD) ~+ 30.EUR) * factor

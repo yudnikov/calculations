@@ -11,7 +11,7 @@ import org.joda.time.format.{DateTimeFormat, DateTimeFormatter}
 
 package object calculations {
 
-  implicit class MoneyExt(value: Money)(implicit currencyRateProvider: CurrencyRateProvider, roundingMode: RoundingMode) {
+  implicit class MoneyExt(value: Money)(implicit context: CalculationsContext) {
     def asScala: ScalaMoney = ScalaMoney(value)
   }
 
@@ -25,19 +25,19 @@ package object calculations {
     def ~% : PercentCalc = PercentCalc(BigDecimal(value))
   }
 
-  implicit class ScalaMoney(val money: Money)(implicit currencyRateProvider: CurrencyRateProvider, roundingMode: RoundingMode) {
+  implicit class ScalaMoney(val money: Money)(implicit context: CalculationsContext) {
     def to(currencyUnit: CurrencyUnit): ScalaMoney = {
-      val rate = currencyRateProvider.getRate(money.getCurrencyUnit, currencyUnit).bigDecimal
-      money.multipliedBy(rate, roundingMode).withCurrencyUnit(currencyUnit)
+      val rate = context.currencyRateProvider.getRate(money.getCurrencyUnit, currencyUnit).bigDecimal
+      money.multipliedBy(rate, context.roundingMode).withCurrencyUnit(currencyUnit)
     }
     def in(currencyUnit: CurrencyUnit): ScalaMoney = {
       this.money.withCurrencyUnit(currencyUnit)
     }
     def *(bigDecimal: BigDecimal): ScalaMoney = {
-      money.multipliedBy(bigDecimal.bigDecimal, roundingMode)
+      money.multipliedBy(bigDecimal.bigDecimal, context.roundingMode)
     }
     def /(bigDecimal: BigDecimal): ScalaMoney = {
-      money.dividedBy(bigDecimal.bigDecimal, roundingMode)
+      money.dividedBy(bigDecimal.bigDecimal, context.roundingMode)
     }
     def +(that: ScalaMoney): ScalaMoney = {
       this.money plus (that.money to this.money.getCurrencyUnit).money
@@ -114,12 +114,12 @@ package object calculations {
   }
 
   case class MoneyCalc(value: ScalaMoney, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
-    (implicit currencyRateProvider: CurrencyRateProvider, roundingMode: RoundingMode)
+    (implicit context: CalculationsContext)
     extends Calculation[ScalaMoney] {
     def to(currencyUnit: CurrencyUnit): MoneyCalc = {
       this.value.currencyUnit != currencyUnit toOption {
-        val rate = currencyRateProvider.getRate(value.money.getCurrencyUnit, currencyUnit)
-        val factorCalc = ConversionFactorCalc(rate, currencyRateProvider, this.value.currencyUnit, currencyUnit)
+        val rate = context.currencyRateProvider.getRate(value.money.getCurrencyUnit, currencyUnit)
+        val factorCalc = ConversionFactorCalc(rate, context.currencyRateProvider, this.value.currencyUnit, currencyUnit)
         MoneyCalc((value * rate) in currencyUnit, Operation.*, this :: factorCalc :: Nil)
       } getOrElse this
     }
@@ -147,8 +147,14 @@ package object calculations {
       MoneyCalc(result, Operation.*, this :: factorCalc :: Nil)
     }
     def *(percentCalc: PercentCalc): MoneyCalc = {
-      val result = this.value * percentCalc.value / 100
+      val result = this.value * percentCalc.value
       MoneyCalc(result, Operation.*, this :: percentCalc :: Nil)
+    }
+    def *(taxCode: TaxCode): MoneyCalc = {
+      this * TaxCalc(taxCode)
+    }
+    def *+(taxCode: TaxCode): MoneyCalc = {
+      this + (this * TaxCalc(taxCode))
     }
   }
 
@@ -156,26 +162,34 @@ package object calculations {
     def toOption[T](body: => T): Option[T] = if (value) Some(body) else None
   }
 
-  case class FactorCalc(
-    value: BigDecimal,
-    operation: Operation = Operation.PRIMARY,
-    children: List[Calculation[_]] = Nil
+  class FactorCalc(
+    val value: BigDecimal,
+    val operation: Operation = Operation.PRIMARY,
+    val children: List[Calculation[_]] = Nil
   ) extends Calculation[BigDecimal]
       with Addendum[FactorCalc, FactorCalc]
       with Multiplier[FactorCalc, FactorCalc] {
     override def +(that: FactorCalc): FactorCalc = {
-      FactorCalc(this.value + that.value, Operation.+, this :: that :: Nil)
+      new FactorCalc(this.value + that.value, Operation.+, this :: that :: Nil)
     }
     override def -(that: FactorCalc): FactorCalc = {
-      FactorCalc(this.value - that.value, Operation.-, this :: that :: Nil)
+      new FactorCalc(this.value - that.value, Operation.-, this :: that :: Nil)
     }
     override def *(that: FactorCalc): FactorCalc = {
-      FactorCalc(this.value * that.value, Operation.*, this :: that :: Nil)
+      new FactorCalc(this.value * that.value, Operation.*, this :: that :: Nil)
     }
     def ~*(that: Double): FactorCalc = {
-      FactorCalc(this.value * that, Operation.*, this :: that.~ :: Nil)
+      new FactorCalc(this.value * that, Operation.*, this :: that.~ :: Nil)
     }
     //def ~*(that: Double): FactorCalc = ???
+  }
+
+  object FactorCalc {
+    def apply(
+      value: BigDecimal,
+      operation: Operation = Operation.PRIMARY,
+      children: List[Calculation[_]] = Nil
+    ): FactorCalc = new FactorCalc(value, operation, children)
   }
 
   case class ConversionFactorCalc(
@@ -194,9 +208,15 @@ package object calculations {
     }
   }
 
-  case class PercentCalc(value: BigDecimal, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
-    extends Calculation[BigDecimal] {
+  class PercentCalc(percent: BigDecimal, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
+    extends FactorCalc(percent / 100, operation, children) {
     override lazy val representation: String = s"$value%"
+  }
+
+  object PercentCalc {
+    def apply(percent: BigDecimal, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil): PercentCalc = {
+      new PercentCalc(percent, operation, children)
+    }
   }
 
   trait Addendum[A, B] {
@@ -207,5 +227,23 @@ package object calculations {
   trait Multiplier[A, B] {
     def *(that: B): A
   }
+
+  case class TaxCalc(taxCode: TaxCode)(implicit context: CalculationsContext) extends PercentCalc(context.taxRateProvider.getRate(taxCode))
+
+  abstract class TaxCode(val code: String)
+  object TaxCode {
+    case object VAT extends TaxCode("VAT")
+  }
+
+  trait TaxRateProvider {
+    val dateTime: DateTime
+    def getRate(taxCode: TaxCode): BigDecimal
+  }
+
+  case class CalculationsContext (
+    currencyRateProvider: CurrencyRateProvider,
+    taxRateProvider: TaxRateProvider,
+    roundingMode: RoundingMode
+  )
 
 }

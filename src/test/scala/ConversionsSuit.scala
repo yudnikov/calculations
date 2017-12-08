@@ -4,8 +4,11 @@ import ru.yudnikov.calculations._
 
 class ConversionsSuit extends FlatSpec with Matchers {
 
-  implicit val currencyRateProvider: CurrencyRateProvider = ExampleRateProvider()
-  implicit val roundingMode: RoundingMode = RoundingMode.HALF_UP
+  implicit val calculationsContext: CalculationsContext = CalculationsContext(
+    ExampleCurrencyRateProvider(),
+    ExampleTaxRateProvider(),
+    RoundingMode.HALF_UP
+  )
 
   "Currency conversions" should "be associative" in {
     val x = 100.RUR + 20.USD - 2.USD - 18.USD
