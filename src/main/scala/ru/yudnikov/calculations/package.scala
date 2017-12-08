@@ -106,7 +106,7 @@ package object calculations {
       if (isFather) {
         List(trackWithHeight)
       } else if (isParent) {
-        children.flatMap(_.trackWithHeights()) union List(trackWithHeight)
+        trackWithHeight :: children.flatMap(_.trackWithHeights()) distinct
       } else
         Nil
     }

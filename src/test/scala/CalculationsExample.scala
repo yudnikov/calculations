@@ -25,10 +25,6 @@ object CalculationsExample extends App {
   val z = (100.RUR.~ to CurrencyUnit.USD) + 20.USD
   z.trace foreach println*/
 
-  val factor = (300.RUR ~* (2 ~+ 4) + 20.USD ~* 3 to CurrencyUnit.of("RUR")) * TaxCode.VAT
-  factor.tracksPrint()
-  println(factor.isTaxAmount)
-
   //val x = ((100.RUR.~ * 10.~ to CurrencyUnit.USD) ~+ 30.EUR) * factor
   //x.tracksPrint()
 
