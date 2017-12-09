@@ -7,6 +7,9 @@ import org.joda.time.format.{DateTimeFormat, DateTimeFormatter}
 import ru.yudnikov.calculations.CurrencyRateProvider
 
 import language.{implicitConversions, postfixOps}
+import scala.util.Random
+
+import ru.yudnikov.utils._
 
 object CalculationsExample extends App {
 
@@ -16,31 +19,69 @@ object CalculationsExample extends App {
     RoundingMode.HALF_UP
   )
 
-  /*val y = (((20.RUR.~ + 20.RUR) to CurrencyUnit.USD) + 50.EUR) - 59.72.USD to CurrencyUnit.of("RUR")
-  println(y.traceMonolith())
-  y.trace foreach println
+  val x = ((100.RUR ~* 3.~% to CurrencyUnit.USD) ~+ 5.EUR to CurrencyUnit.EUR) ~+ 30.RUR *+ TaxCode.VAT
+  x.tracksPrint()
 
-  println()
+  val y = ((2 ~+ 2) ~/ 5) + ((12 ~/ 2 ~* 3) ~- 2)
+  y.tracksPrint()
 
-  val z = (100.RUR.~ to CurrencyUnit.USD) + 20.USD
-  z.trace foreach println*/
+  val z = (100.RUR ~/ 10 ~+ 2.RUR) * TaxCode.VAT
+  z.tracksPrint()
 
-  //val x = ((100.RUR.~ * 10.~ to CurrencyUnit.USD) ~+ 30.EUR) * factor
-  //x.tracksPrint()
+  val r = new Random(new DateTime().getMillis)
 
-  //println(100.RUR.~ == 100.RUR.~)
+  val moneys = 1 to 100 map { _ =>
+    r.nextInt(100000).RUR
+  }
 
-  /*
-  val a = 100.RUR ~* 3
-  val moneyCalc = MoneyCalc(100.RUR)
-  val factorCalc = FactorCalc(3)
-  val b = MoneyCalc(ScalaMoney(300.RUR), Operation.*, moneyCalc :: factorCalc :: Nil)
-  println(a == b)
-  */
+  val taxes = moneys map { money =>
+    val withVAT = money ~*+ TaxCode.VAT
+    withVAT -> withVAT * 3.~%
+  }
 
-  val r = 100.RUR ~+ 50.RUR
-  val a = MoneyCalc(100.RUR)
-  val b = MoneyCalc(50.RUR)
-  println(r == MoneyCalc(ScalaMoney(150.RUR), Operation.+, a :: b :: Nil))
+  println(taxes)
+  trait Model[T] {
+    val id: T
+  }
+  trait Slice
+  case class Subdivision(id: String) extends Model[String] with Slice
+  case class Employee(id: Long, name: String) extends Model[Long] with Slice
+  val salesPerYear = 1200000.RUR
+  val subdivisionToPercent = Map(
+    Subdivision("Sales") -> 61.~%,
+    Subdivision("Supply") -> 24.~%,
+    Subdivision("IT") -> 9.~%,
+  )
+  val employeeToSubdivision = Map(
+    Employee(1, "Oleg") -> Subdivision("Sales"),
+    Employee(2, "Viktor") -> Subdivision("Supply"),
+    Employee(3, "Igor") -> Subdivision("IT"),
+    Employee(4, "Valera") -> Subdivision("IT"),
+    Employee(5, "Sergey") -> Subdivision("Supply")
+  )
+  val employeeToSalary = employeeToSubdivision.mapValues(_ => r.nextInt(150000).RUR)
+  val bonusPerSubdivision = subdivisionToPercent mapValues { p =>
+    (salesPerYear ~* 30.~%) * p
+  }
+
+  bonusPerSubdivision foreach { t =>
+    println(t._1)
+    t._2.tracksPrint()
+  }
+
+  val subdivisionToEmployees = reverseMap(employeeToSubdivision)
+
+  val total = subdivisionToEmployees map { t =>
+    val subdivision = t._1
+    val employees = t._2
+    employees.map { employee =>
+      employeeToSalary(employee).asScala ~+ (bonusPerSubdivision(subdivision) ~/ subdivisionToEmployees.keys.size)
+    }
+  }
+  total foreach {
+    _ foreach { calc =>
+      calc.tracksPrint()
+    }
+  }
 
 }

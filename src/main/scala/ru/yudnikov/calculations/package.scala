@@ -20,9 +20,15 @@ package object calculations {
     def USD: Money = Money.of(CurrencyUnit.USD, value)
     def EUR: Money = Money.of(CurrencyUnit.EUR, value)
     def ~ : FactorCalc = FactorCalc(value)
-    def ~*(that: Double): FactorCalc = this.~ * that.~
     def ~*(that: ScalaMoney)(implicit context: CalculationsContext): MoneyCalc = this.~ * that.~
     def ~+(that: Double): FactorCalc = this.~ + that.~
+    def ~-(that: Double): FactorCalc = this.~ - that.~
+    def ~*(that: Double): FactorCalc = this.~ * that.~
+    def ~/(that: Double): FactorCalc = this.~ / that.~
+    def ~+(that: FactorCalc): FactorCalc = this.~ + that
+    def ~-(that: FactorCalc): FactorCalc = this.~ - that
+    def ~*(that: FactorCalc): FactorCalc = this.~ * that
+    def ~/(that: FactorCalc): FactorCalc = this.~ / that
     def ~% : PercentCalc = PercentCalc(BigDecimal(value))
   }
 
@@ -48,8 +54,13 @@ package object calculations {
     }
     def ~ : MoneyCalc = MoneyCalc(this)
     def ~*(that: FactorCalc): MoneyCalc = this.~ * that
+    def ~/(that: FactorCalc): MoneyCalc = this.~ / that
     def ~*(that: Double): MoneyCalc = this.~ * that.~
+    def ~/(that: Double): MoneyCalc = this.~ / that.~
     def ~+(that: ScalaMoney): MoneyCalc = this.~ + that.~
+    def ~+(that: MoneyCalc): MoneyCalc = this.~ + that
+    def ~*(that: TaxCode): MoneyCalc = this.~ * that
+    def ~*+(that: TaxCode): MoneyCalc = this.~ *+ that
     lazy val currencyUnit: CurrencyUnit = money.getCurrencyUnit
     override def toString: String = money.toString
     override def hashCode(): Int = money.hashCode()
@@ -70,17 +81,18 @@ package object calculations {
     def getRate(numerator: CurrencyUnit, denominator: CurrencyUnit): BigDecimal
   }
 
-  trait Operation {
+  abstract class Operation(code: String) {
     def spaced: String = " " + toString + " "
+    override def toString: String = code
   }
 
   object Operation {
-    case object PRIMARY extends Operation
-    case object Conversion extends Operation
-    case object + extends Operation
-    case object - extends Operation
-    case object * extends Operation
-    case object / extends Operation
+    case object PRIMARY extends Operation("")
+    case object CONVERSION extends Operation("->")
+    case object PLUS extends Operation("+")
+    case object MINUS extends Operation("-")
+    case object TIMES extends Operation("*")
+    case object DIVISION extends Operation("/")
   }
 
   trait Calculation[T] {
@@ -130,23 +142,24 @@ package object calculations {
 
   class MoneyCalc(val value: ScalaMoney, val operation: Operation = Operation.PRIMARY, val children: List[Calculation[_]] = Nil)
     (implicit context: CalculationsContext)
-    extends Calculation[ScalaMoney] {
+    extends Calculation[ScalaMoney]
+      with Dividend[MoneyCalc, FactorCalc] {
     def to(currencyUnit: CurrencyUnit): MoneyCalc = {
       this.value.currencyUnit != currencyUnit toOption {
         val rate = context.currencyRateProvider.getRate(value.money.getCurrencyUnit, currencyUnit)
         val factorCalc = ConversionFactorCalc(rate, context.currencyRateProvider, this.value.currencyUnit, currencyUnit)
-        MoneyCalc((value * rate) in currencyUnit, Operation.*, this :: factorCalc :: Nil)
+        MoneyCalc((value * rate) in currencyUnit, Operation.TIMES, this :: factorCalc :: Nil)
       } getOrElse this
     }
     def +(that: MoneyCalc): MoneyCalc = {
       val converted = that to this.value.currencyUnit
       val result = value + converted.value
-      MoneyCalc(result, Operation.+, this :: converted :: Nil)
+      MoneyCalc(result, Operation.PLUS, this :: converted :: Nil)
     }
     def -(that: MoneyCalc): MoneyCalc = {
       val converted = that to this.value.currencyUnit
       val result = value - converted.value
-      MoneyCalc(result, Operation.-, this :: converted :: Nil)
+      MoneyCalc(result, Operation.MINUS, this :: converted :: Nil)
     }
     def ~*(that: Double): MoneyCalc = {
       this * that.~
@@ -159,17 +172,22 @@ package object calculations {
     }
     def *(factorCalc: FactorCalc): MoneyCalc = {
       val result = this.value * factorCalc.value
-      MoneyCalc(result, Operation.*, this :: factorCalc :: Nil)
+      MoneyCalc(result, Operation.TIMES, this :: factorCalc :: Nil)
     }
     def *(percentCalc: PercentCalc): MoneyCalc = {
       val result = this.value * percentCalc.value
-      MoneyCalc(result, Operation.*, this :: percentCalc :: Nil)
+      MoneyCalc(result, Operation.TIMES, this :: percentCalc :: Nil)
     }
     def *(taxCode: TaxCode): MoneyCalc = {
       this * TaxCalc(taxCode)
     }
     def *+(taxCode: TaxCode): MoneyCalc = {
       this + (this * TaxCalc(taxCode))
+    }
+    def ~/(that: Double): MoneyCalc = this / that.~
+
+    override def /(that: FactorCalc): MoneyCalc = {
+      MoneyCalc(value / that.value, Operation.DIVISION, this :: that :: Nil)
     }
   }
   object MoneyCalc {
@@ -192,24 +210,36 @@ package object calculations {
     val children: List[Calculation[_]] = Nil
   ) extends Calculation[BigDecimal]
       with Addendum[FactorCalc, FactorCalc]
-      with Multiplier[FactorCalc, FactorCalc] {
+      with Multiplier[FactorCalc, FactorCalc]
+      with Dividend[FactorCalc, FactorCalc] {
     override def +(that: FactorCalc): FactorCalc = {
-      new FactorCalc(this.value + that.value, Operation.+, this :: that :: Nil)
+      new FactorCalc(this.value + that.value, Operation.PLUS, this :: that :: Nil)
     }
     override def -(that: FactorCalc): FactorCalc = {
-      new FactorCalc(this.value - that.value, Operation.-, this :: that :: Nil)
+      new FactorCalc(this.value - that.value, Operation.MINUS, this :: that :: Nil)
     }
     override def *(that: FactorCalc): FactorCalc = {
-      new FactorCalc(this.value * that.value, Operation.*, this :: that :: Nil)
+      new FactorCalc(this.value * that.value, Operation.TIMES, this :: that :: Nil)
+    }
+    override def /(that: FactorCalc): FactorCalc = {
+      new FactorCalc(this.value / that.value, Operation.DIVISION, this :: that :: Nil)
     }
     def *(that: MoneyCalc)(implicit context: CalculationsContext) = {
       val result = that.value * value
-      MoneyCalc(result, Operation.*, this :: that :: Nil)
+      MoneyCalc(result, Operation.TIMES, this :: that :: Nil)
     }
     def ~*(that: Double): FactorCalc = {
-      new FactorCalc(this.value * that, Operation.*, this :: that.~ :: Nil)
+      new FactorCalc(this.value * that, Operation.TIMES, this :: that.~ :: Nil)
     }
-    //def ~*(that: Double): FactorCalc = ???
+    def ~+(that: Double): FactorCalc = {
+      new FactorCalc(this.value + that, Operation.PLUS, this :: that.~ :: Nil)
+    }
+    def ~/(that: Double): FactorCalc = {
+      new FactorCalc(this.value / that, Operation.DIVISION, this :: that.~ :: Nil)
+    }
+    def ~-(that: Double): FactorCalc = {
+      new FactorCalc(this.value - that, Operation.MINUS, this :: that.~ :: Nil)
+    }
     override def equals(obj: Any): Boolean = {
       super.equals(obj)
     }
@@ -231,7 +261,7 @@ package object calculations {
   )(
     implicit formatter: DateTimeFormatter = DateTimeFormat.forPattern("yyyy-MM-dd")
   ) extends Calculation[BigDecimal] {
-    override lazy val operation: Operation = Operation.Conversion
+    override lazy val operation: Operation = Operation.CONVERSION
     override lazy val children: List[Calculation[_]] = Nil
     override lazy val representation: String = trackFull()
     override def trackFull(isRoot: Boolean): String = {
@@ -259,6 +289,10 @@ package object calculations {
     def *(that: B): A
   }
 
+  trait Dividend[A, B] {
+    def /(that: B): A
+  }
+
   case class TaxCalc(taxCode: TaxCode)(implicit context: CalculationsContext)
     extends PercentCalc(context.taxRateProvider.getRate(taxCode)) {
     override def representation: String = s"$taxCode " + super.representation
@@ -279,5 +313,10 @@ package object calculations {
     taxRateProvider: TaxRateProvider,
     roundingMode: RoundingMode
   )
+
+  class AccrualCalc(value: ScalaMoney, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)(implicit context: CalculationsContext)
+    extends MoneyCalc(value, operation, children) {
+
+  }
 
 }
