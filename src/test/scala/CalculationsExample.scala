@@ -75,12 +75,14 @@ object CalculationsExample extends App {
     val subdivision = t._1
     val employees = t._2
     employees.map { employee =>
-      employeeToSalary(employee).asScala ~+ (bonusPerSubdivision(subdivision) ~/ subdivisionToEmployees.keys.size)
+      employee -> employeeToSalary(employee).asScala ~+ (bonusPerSubdivision(subdivision) ~/ subdivisionToEmployees.keys.size)
     }
   }
-  total foreach {
-    _ foreach { calc =>
-      calc.tracksPrint()
+
+  total foreach { i =>
+    i foreach { t =>
+      println(t._1)
+      t._2.tracksPrint()
     }
   }
 
