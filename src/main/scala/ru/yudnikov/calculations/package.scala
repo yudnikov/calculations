@@ -16,9 +16,7 @@ package object calculations {
 
   implicit class DoubleExt(value: Double) {
     def RUR: Money = Money.of(CurrencyUnit.of("RUR"), value)
-
     def USD: Money = Money.of(CurrencyUnit.USD, value)
-
     def EUR: Money = Money.of(CurrencyUnit.EUR, value)
 
     def ~ : FactorCalc = FactorCalc(value)
@@ -26,22 +24,17 @@ package object calculations {
     def ~*(that: ScalaMoney)(implicit context: CalculationsContext): MoneyCalc = this.~ * that.~
 
     def ~+(that: Double): FactorCalc = this.~ + that.~
-
     def ~-(that: Double): FactorCalc = this.~ - that.~
-
     def ~*(that: Double): FactorCalc = this.~ * that.~
-
     def ~/(that: Double): FactorCalc = this.~ / that.~
 
     def ~+(that: FactorCalc): FactorCalc = this.~ + that
-
     def ~-(that: FactorCalc): FactorCalc = this.~ - that
-
     def ~*(that: FactorCalc): FactorCalc = this.~ * that
-
     def ~/(that: FactorCalc): FactorCalc = this.~ / that
 
     def ~% : PercentCalc = PercentCalc(BigDecimal(value))
+
   }
 
   implicit class ScalaMoney(val money: Money)(implicit context: CalculationsContext) {
@@ -73,11 +66,9 @@ package object calculations {
     def ~ : MoneyCalc = MoneyCalc(this)
 
     def ~*(that: FactorCalc): MoneyCalc = this.~ * that
-
     def ~/(that: FactorCalc): MoneyCalc = this.~ / that
 
     def ~*(that: Double): MoneyCalc = this.~ * that.~
-
     def ~/(that: Double): MoneyCalc = this.~ / that.~
 
     def ~+(that: ScalaMoney): MoneyCalc = this.~ + that.~
@@ -203,7 +194,6 @@ package object calculations {
     def ~*(that: Double): MoneyCalc = this * that.~
 
     def ~+(that: ScalaMoney): MoneyCalc = this + that.~
-
     def ~-(that: ScalaMoney): MoneyCalc = this - that.~
 
     def *(factorCalc: FactorCalc): MoneyCalc = {
@@ -224,6 +214,7 @@ package object calculations {
       MoneyCalc(value / that.value, Operation.DIVISION, this :: that :: Nil)
     }
   }
+
   object MoneyCalc {
     def apply(value: ScalaMoney, operation: Operation = Operation.PRIMARY, children: List[Calculation[_]] = Nil)
       (implicit context: CalculationsContext): MoneyCalc = {
@@ -320,7 +311,6 @@ package object calculations {
 
   trait Addendum[A, B] {
     def +(that: B): A
-
     def -(that: B): A
   }
 
@@ -344,7 +334,6 @@ package object calculations {
 
   trait TaxRateProvider {
     val dateTime: DateTime
-
     def getRate(taxCode: TaxCode): BigDecimal
   }
 
